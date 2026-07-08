@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "code-agent"
+version = "0.1.0"
+description = "A minimal Python CLI coding agent with provider abstraction, tool calling, sessions, and Rich terminal UI."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Code Agent Contributors" }]
+dependencies = [
+    "google-genai>=1.40.0",
+    "httpx>=0.28.0",
+    "jsonschema>=4.23.0",
+    "openai>=1.90.0",
+    "prompt-toolkit>=3.0.48",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.1",
+    "rich>=13.9.0",
+    "typer>=0.15.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+]
+
+[project.scripts]
+code-agent = "code_agent.cli:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: calls a real LLM provider API",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/code_agent"]
