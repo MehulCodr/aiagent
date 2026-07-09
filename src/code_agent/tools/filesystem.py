@@ -24,6 +24,8 @@ def resolve_inside_root(root: Path, raw_path: str) -> Path:
 
 
 class ListFilesTool(Tool):
+    parallel_safe = True
+
     definition = ToolDefinition(
         name="list_files",
         description="List files and directories under a project-root-relative path.",
@@ -58,6 +60,8 @@ class ListFilesTool(Tool):
 
 
 class ReadFileTool(Tool):
+    parallel_safe = True
+
     definition = ToolDefinition(
         name="read_file",
         description="Read a UTF-8 text file inside the project root, optionally by 1-based line range.",

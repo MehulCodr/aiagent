@@ -22,9 +22,26 @@ Config lives at `.code-agent/config.json`:
   "max_steps": 12,
   "stream": true,
   "require_shell_confirmation": true,
-  "session_char_budget": 120000
+  "permission_profile": "strict",
+  "session_char_budget": 120000,
+  "rag_enabled": true,
+  "rag_max_chunks": 6,
+  "verbose": false
 }
 ```
+
+Runtime state lives under `.agent/`:
+
+- `.agent/sessions/` for saved sessions
+- `.agent/plans/` for the last reviewed plan
+- `.agent/rag_index.json` for the repository index cache
+- `.agent/logs/debug.jsonl` when `--verbose` is enabled
+
+Permission profiles:
+
+- `strict`: approve every shell command.
+- `relaxed`: approve risky shell and git commands, allow safe shell commands.
+- `read-only`: block shell and write tools.
 
 Environment overrides:
 

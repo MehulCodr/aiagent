@@ -9,8 +9,16 @@ python -m pip install -e ".[dev]"
 Run local tests:
 
 ```powershell
-pytest tests/test_tools.py
+pytest
 ```
+
+Use the built-in bounded runner:
+
+```powershell
+code-agent test "pytest" --max-attempts 1
+```
+
+The runner summarizes failures and stops after the configured attempt count. It does not retry infinitely.
 
 Run live Gemini tests:
 

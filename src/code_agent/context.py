@@ -18,12 +18,15 @@ EXCLUDED_NAMES = {
     "venv",
     "__pycache__",
     "node_modules",
+    "vendor",
     "dist",
     "build",
+    ".agent",
+    ".code-agent",
 }
 
 
-def build_system_prompt(root: Path, tools: list[Any], config: AgentConfig) -> str:
+def build_system_prompt(root: Path, tools: list[Any], config: AgentConfig, retrieved_context: str = "") -> str:
     tool_names = ", ".join(tool.name for tool in tools)
     project_snapshot = _project_snapshot(root)
     agent_instructions = _read_optional(root / "AGENTS.md", 12_000)
@@ -46,6 +49,16 @@ def build_system_prompt(root: Path, tools: list[Any], config: AgentConfig) -> st
         "Project snapshot:",
         project_snapshot,
     ]
+    if retrieved_context:
+        parts.extend(
+            [
+                "",
+                "Retrieved repository context:",
+                retrieved_context,
+                "",
+                "When you use retrieved repository facts, cite paths and line ranges exactly like `src/file.py:10-24`.",
+            ]
+        )
     if agent_instructions:
         parts.extend(["", "AGENTS.md:", agent_instructions])
     if config.session_char_budget:

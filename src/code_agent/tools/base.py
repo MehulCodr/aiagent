@@ -43,6 +43,7 @@ class ToolContext:
 
 class Tool(ABC):
     definition: ToolDefinition
+    parallel_safe: bool = False
 
     @abstractmethod
     def run(self, context: ToolContext, arguments: dict[str, Any]) -> ToolResult:
@@ -66,6 +67,13 @@ class ToolRegistry:
 
     def names(self) -> list[str]:
         return list(self._tools)
+
+    def get(self, name: str) -> Tool | None:
+        return self._tools.get(name)
+
+    def is_parallel_safe(self, name: str) -> bool:
+        tool = self.get(name)
+        return bool(tool and tool.parallel_safe)
 
     def run(self, name: str, arguments: dict[str, Any], context: ToolContext) -> ToolResult:
         tool = self._tools.get(name)

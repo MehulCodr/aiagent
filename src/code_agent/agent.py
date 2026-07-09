@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from code_agent.approval import ApprovalLayer, PermissionPolicy
 from code_agent.config import AgentConfig
 from code_agent.context import build_system_prompt
+from code_agent.execution import ExecutionEngine
+from code_agent.git_workflow import GitWorkflow
 from code_agent.messages import ChatMessage, ToolCall
+from code_agent.observability import Observer
+from code_agent.planner import Plan, PlanStore, Planner, build_apply_prompt
 from code_agent.providers.base import LLMProvider, ProviderError
+from code_agent.rag import RepositoryRAG
 from code_agent.session import Session, SessionStore
 from code_agent.tools import ToolRegistry
-from code_agent.tools.base import ToolContext
 from code_agent.ui import TerminalUI
 
 
@@ -25,6 +30,10 @@ class AgentRuntime:
         tools: ToolRegistry,
         ui: TerminalUI,
         auto_approve: bool = False,
+        observer: Observer | None = None,
+        repository_rag: RepositoryRAG | None = None,
+        plan_store: PlanStore | None = None,
+        git_workflow: GitWorkflow | None = None,
     ) -> None:
         self.root = root.resolve()
         self.config = config
@@ -35,17 +44,25 @@ class AgentRuntime:
         self.tools = tools
         self.ui = ui
         self.auto_approve = auto_approve
+        self.observer = observer or Observer(self.root, verbose=config.verbose)
+        self.repository_rag = repository_rag or RepositoryRAG(self.root)
+        self.plan_store = plan_store or PlanStore(self.root)
+        self.git_workflow = git_workflow or GitWorkflow(self.root)
 
     def run_user_turn(self, prompt: str) -> str:
+        self._save_rollback_snapshot()
         self.session.messages.append(ChatMessage(role="user", content=prompt))
         self.session_store.save(self.session)
         final_text = ""
+        retrieved_context = self._retrieve_context(prompt)
 
         for step in range(1, self.config.max_steps + 1):
-            system_prompt = build_system_prompt(self.root, self.tools.definitions(), self.config)
+            system_prompt = build_system_prompt(self.root, self.tools.definitions(), self.config, retrieved_context)
             input_messages = _budget_messages(self.session.messages, self.config.session_char_budget)
             assistant_text = ""
             tool_calls: list[ToolCall] = []
+            usage = None
+            timer = self.observer.timer()
             try:
                 for event in self.provider.stream_chat(
                     model=self.model,
@@ -60,9 +77,18 @@ class AgentRuntime:
                         self.ui.stream_text(event.text)
                     elif event.type == "tool_calls":
                         tool_calls.extend(event.tool_calls)
+                    elif event.type == "done" and event.usage is not None:
+                        usage = event.usage
             except ProviderError as exc:
                 self.ui.error(str(exc))
                 raise
+            finally:
+                self.observer.record_response(
+                    provider=self.provider.id,
+                    model=self.model,
+                    latency_ms=timer.elapsed_ms(),
+                    usage=usage,
+                )
 
             if assistant_text:
                 self.ui.end_stream()
@@ -82,25 +108,62 @@ class AgentRuntime:
         self.ui.warning(message)
         return final_text
 
+    def create_plan(self, prompt: str) -> Plan:
+        repository_context = self._retrieve_context(prompt)
+        planner = Planner(provider=self.provider, model=self.model, config=self.config, observer=self.observer)
+        plan = planner.create_plan(prompt, repository_context=repository_context)
+        self.plan_store.save(plan)
+        return plan
+
+    def load_last_plan(self) -> Plan:
+        return self.plan_store.load_last()
+
+    def apply_plan(self, plan: Plan | None = None, *, extra_instruction: str | None = None) -> str:
+        selected = plan or self.plan_store.load_last()
+        result = self.run_user_turn(build_apply_prompt(selected, extra_instruction))
+        self.plan_store.mark_applied(selected)
+        return result
+
+    def rollback_last_turn(self) -> None:
+        self.git_workflow.rollback()
+
     def _run_tool_calls(self, tool_calls: list[ToolCall]) -> None:
-        context = ToolContext(
-            root=self.root,
-            approval_callback=self.ui.confirm_shell if self.config.require_shell_confirmation else None,
+        approval = ApprovalLayer(
+            policy=PermissionPolicy.from_name(self.config.permission_profile),
+            callback=self.ui.confirm_tool if self.config.require_shell_confirmation else None,
             auto_approve=self.auto_approve or not self.config.require_shell_confirmation,
         )
+        engine = ExecutionEngine(root=self.root, tools=self.tools, approval=approval, observer=self.observer)
         for call in tool_calls:
             self.ui.tool_call(call)
-            result = self.tools.run(call.name, call.arguments, context)
-            self.ui.tool_result(call.name, result)
+        records = engine.run_many(tool_calls)
+        for record in records:
+            result = record.result
+            self.ui.tool_result(record.name, result)
             self.session.messages.append(
                 ChatMessage(
                     role="tool",
                     content=result.content,
-                    tool_call_id=call.id,
-                    name=call.name,
+                    tool_call_id=record.call_id,
+                    name=record.name,
                 )
             )
             self.session_store.save(self.session)
+        self.ui.tool_timeline(records)
+
+    def _retrieve_context(self, prompt: str) -> str:
+        if not self.config.rag_enabled:
+            return ""
+        context = self.repository_rag.retrieve_context(prompt, limit=self.config.rag_max_chunks)
+        if context:
+            self.observer.record("rag_retrieval", chunks=context.count("```") // 2)
+        return context
+
+    def _save_rollback_snapshot(self) -> None:
+        try:
+            self.git_workflow.save_snapshot()
+        except Exception as exc:
+            self.observer.record("rollback_snapshot_failed", error=str(exc))
 
 
 def _budget_messages(messages: list[ChatMessage], budget: int) -> list[ChatMessage]:

@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from code_agent.config import config_dir
+from code_agent.config import agent_dir, config_dir
 from code_agent.messages import ChatMessage
 
 
@@ -29,7 +29,8 @@ class Session(BaseModel):
 class SessionStore:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
-        self.directory = config_dir(self.root) / "sessions"
+        self.directory = agent_dir(self.root) / "sessions"
+        self.legacy_directory = config_dir(self.root) / "sessions"
         self.directory.mkdir(parents=True, exist_ok=True)
 
     def path_for(self, session_id: str) -> Path:
@@ -49,18 +50,42 @@ class SessionStore:
         if not path.exists():
             path = self.path_for(str(session))
         if not path.exists():
-            matches = list(self.directory.glob(f"{session}*.json"))
+            matches = [*self.directory.glob(f"{session}*.json"), *self.legacy_directory.glob(f"{session}*.json")]
             if len(matches) == 1:
                 path = matches[0]
+        if not path.exists():
+            for candidate in [*self.directory.glob("*.json"), *self.legacy_directory.glob("*.json")]:
+                loaded = Session.model_validate(json.loads(candidate.read_text(encoding="utf-8")))
+                if loaded.name == str(session):
+                    return loaded
         if not path.exists():
             raise FileNotFoundError(f"Session not found: {session}")
         return Session.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
     def latest(self) -> Session | None:
-        paths = sorted(self.directory.glob("*.json"), key=lambda item: item.stat().st_mtime)
+        paths = sorted(self.list(), key=lambda item: item.stat().st_mtime)
         if not paths:
             return None
         return self.load(paths[-1])
 
     def list(self) -> list[Path]:
-        return sorted(self.directory.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
+        paths = [*self.directory.glob("*.json"), *self.legacy_directory.glob("*.json")]
+        return sorted(paths, key=lambda item: item.stat().st_mtime, reverse=True)
+
+    def list_sessions(self) -> list[Session]:
+        sessions: list[Session] = []
+        seen: set[str] = set()
+        for path in self.list():
+            session = self.load(path)
+            if session.id in seen:
+                continue
+            seen.add(session.id)
+            sessions.append(session)
+        return sessions
+
+    def save_named(self, session: Session, name: str) -> Path:
+        cleaned = name.strip()
+        if not cleaned:
+            raise ValueError("Session name cannot be empty.")
+        session.name = cleaned
+        return self.save(session)

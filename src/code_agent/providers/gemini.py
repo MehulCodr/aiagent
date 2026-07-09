@@ -5,7 +5,7 @@ import os
 from typing import Any
 from uuid import uuid4
 
-from code_agent.messages import ChatMessage, ProviderEvent, ToolCall
+from code_agent.messages import ChatMessage, ProviderEvent, ProviderUsage, ToolCall
 from code_agent.providers.base import LLMProvider, ModelInfo, ProviderError
 from code_agent.tools.base import ToolDefinition
 
@@ -79,9 +79,11 @@ class GeminiProvider(LLMProvider):
 
         collected_calls: list[ToolCall] = []
         seen_calls: set[str] = set()
+        usage: ProviderUsage | None = None
         try:
             stream = client.models.generate_content_stream(model=model, contents=contents, config=config)
             for chunk in stream:
+                usage = _extract_usage(chunk) or usage
                 text = _safe_chunk_text(chunk)
                 if text:
                     yield ProviderEvent(type="text", text=text)
@@ -94,7 +96,7 @@ class GeminiProvider(LLMProvider):
             raise ProviderError(f"Gemini request failed for model '{model}': {exc}") from exc
         if collected_calls:
             yield ProviderEvent(type="tool_calls", tool_calls=collected_calls)
-        yield ProviderEvent(type="done")
+        yield ProviderEvent(type="done", usage=usage)
 
 
 def _to_gemini_tool(tools: list[ToolDefinition], types):
@@ -147,6 +149,18 @@ def _safe_chunk_text(chunk) -> str:
         return chunk.text or ""
     except Exception:
         return ""
+
+
+def _extract_usage(chunk) -> ProviderUsage | None:
+    raw = getattr(chunk, "usage_metadata", None)
+    if raw is None:
+        return None
+    input_tokens = getattr(raw, "prompt_token_count", None)
+    output_tokens = getattr(raw, "candidates_token_count", None)
+    total_tokens = getattr(raw, "total_token_count", None)
+    if input_tokens is None and output_tokens is None and total_tokens is None:
+        return None
+    return ProviderUsage(input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=total_tokens)
 
 
 def _extract_gemini_calls(chunk) -> list[ToolCall]:
