@@ -15,6 +15,7 @@ from code_agent.messages import ToolCall
 from code_agent.tools.base import ToolResult
 
 if TYPE_CHECKING:
+    from prompt_toolkit.history import History
     from prompt_toolkit import PromptSession
     from rich.markdown import Markdown
     from rich.status import Status
@@ -38,10 +39,12 @@ class TerminalUI:
         self.verbose = verbose
         self.markdown = TerminalMarkdownRenderer()
         self._prompt_session: PromptSession[str] | None = None
+        self._prompt_history_path: Path | None = None
         self._session_id = ""
 
     def header(self, *, provider: str, model: str, root: Path, session_id: str) -> None:
         self._session_id = session_id
+        self._prompt_history_path = root / ".agent" / "prompt_history"
         table = Table.grid(expand=True)
         table.add_column(ratio=1)
         table.add_column(justify="right")
@@ -73,11 +76,22 @@ class TerminalUI:
             yield status
 
     def user_prompt(self) -> str:
+        if self._prompt_session is None:
+            self._prompt_session = self._create_prompt_session()
+        return self._prompt_session.prompt("you> ", bottom_toolbar=self._bottom_toolbar).strip()
+
+    def _create_prompt_session(self) -> PromptSession[str]:
         from prompt_toolkit import PromptSession
 
-        if self._prompt_session is None:
-            self._prompt_session = PromptSession()
-        return self._prompt_session.prompt("you> ", bottom_toolbar=self._bottom_toolbar).strip()
+        return PromptSession(history=self._create_prompt_history())
+
+    def _create_prompt_history(self) -> History:
+        from prompt_toolkit.history import FileHistory, InMemoryHistory
+
+        if self._prompt_history_path is None:
+            return InMemoryHistory()
+        self._prompt_history_path.parent.mkdir(parents=True, exist_ok=True)
+        return FileHistory(str(self._prompt_history_path))
 
     def stream_text(self, text: str) -> None:
         self.console.print(text, end="", markup=False, highlight=False)

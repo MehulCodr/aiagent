@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import StringIO
 from unittest.mock import patch
 
+from prompt_toolkit.history import FileHistory, InMemoryHistory
 from rich.console import Console
 
 from code_agent.messages import ToolCall
@@ -70,3 +71,24 @@ def test_shell_approval_uses_simple_yes_no_prompt() -> None:
     assert "Shell command requires approval:" in text
     assert "pytest" in text
     assert "╭" not in text
+
+
+def test_prompt_history_uses_project_file_after_header(tmp_path) -> None:
+    output = StringIO()
+    ui = TerminalUI(Console(file=output, force_terminal=True, no_color=True), no_color=True)
+
+    ui.header(provider="fake", model="fake-model", root=tmp_path, session_id="session-123")
+    history = ui._create_prompt_history()
+
+    assert isinstance(history, FileHistory)
+    assert ui._prompt_history_path == tmp_path / ".agent" / "prompt_history"
+    assert (tmp_path / ".agent").is_dir()
+
+
+def test_prompt_history_falls_back_to_memory_before_header() -> None:
+    output = StringIO()
+    ui = TerminalUI(Console(file=output, force_terminal=True, no_color=True), no_color=True)
+
+    history = ui._create_prompt_history()
+
+    assert isinstance(history, InMemoryHistory)
