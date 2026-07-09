@@ -114,7 +114,9 @@ def _planner_system_prompt(repository_context: str) -> str:
         "You are the planning mode of code-agent.",
         "Create a practical implementation plan only. Do not call tools or claim changes were made.",
         "Include verification steps and note risky operations that should require approval.",
-        "When repository excerpts are relevant, cite paths and line ranges exactly like `src/file.py:10-24`.",
+        "Write the plan in concise Markdown; the terminal UI renders Markdown for display.",
+        "Use compact sections such as Goal, Steps, Verification, and Risks when structure helps.",
+        "When repository excerpts are relevant, cite paths and line ranges exactly in this form: src/file.py:10-24.",
     ]
     if repository_context:
         parts.extend(["", "Repository context:", repository_context])

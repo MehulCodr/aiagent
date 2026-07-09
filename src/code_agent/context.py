@@ -46,6 +46,11 @@ def build_system_prompt(root: Path, tools: list[Any], config: AgentConfig, retri
         "- Do not expose secrets. If a command output contains a secret, summarize safely.",
         "- Continue the agent loop until the requested work is actually complete or a real blocker is reached.",
         "",
+        "Response style:",
+        "- Write user-facing replies in concise Markdown when structure helps.",
+        "- Use headings, bullets, inline code, and fenced code blocks naturally; the terminal UI renders Markdown for display.",
+        "- Keep final answers compact and focused on the completed work, verification, and blockers if any.",
+        "",
         "Project snapshot:",
         project_snapshot,
     ]
@@ -56,7 +61,7 @@ def build_system_prompt(root: Path, tools: list[Any], config: AgentConfig, retri
                 "Retrieved repository context:",
                 retrieved_context,
                 "",
-                "When you use retrieved repository facts, cite paths and line ranges exactly like `src/file.py:10-24`.",
+                "When you use retrieved repository facts, cite paths and line ranges exactly in this form: src/file.py:10-24.",
             ]
         )
     if agent_instructions:

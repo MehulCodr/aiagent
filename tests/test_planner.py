@@ -10,7 +10,7 @@ from rich.console import Console
 from code_agent.agent import AgentRuntime
 from code_agent.config import AgentConfig
 from code_agent.messages import ChatMessage, ProviderEvent, ToolCall
-from code_agent.planner import Plan, PlanStore, Planner, build_apply_prompt
+from code_agent.planner import Plan, PlanStore, Planner, _planner_system_prompt, build_apply_prompt
 from code_agent.providers.base import LLMProvider, ModelInfo
 from code_agent.session import SessionStore
 from code_agent.tools import build_default_tool_registry
@@ -57,6 +57,15 @@ def test_planner_persists_last_plan(tmp_path: Path) -> None:
     assert build_apply_prompt(loaded).startswith("Apply this reviewed plan.")
 
 
+def test_planner_prompt_allows_markdown_rendered_by_terminal_ui() -> None:
+    prompt = _planner_system_prompt("")
+
+    assert "concise Markdown" in prompt
+    assert "terminal UI renders Markdown" in prompt
+    assert "not Markdown" not in prompt
+    assert "src/file.py:10-24" in prompt
+
+
 def test_runtime_apply_executes_saved_plan(tmp_path: Path) -> None:
     provider = FakeProvider(
         [
@@ -95,3 +104,39 @@ def test_runtime_apply_executes_saved_plan(tmp_path: Path) -> None:
 
     assert (tmp_path / "out.txt").read_text(encoding="utf-8") == "done\n"
     assert runtime.load_last_plan().status == "applied"
+
+
+def test_runtime_renders_assistant_markdown_as_terminal_output(tmp_path: Path) -> None:
+    provider = FakeProvider(
+        [
+            [
+                ProviderEvent(type="text", text="# Summary\n\n- **Done** with `src/app.py`"),
+                ProviderEvent(type="done"),
+            ]
+        ]
+    )
+    config = AgentConfig(rag_enabled=False, require_shell_confirmation=False, max_steps=1)
+    store = SessionStore(tmp_path)
+    output = StringIO()
+    runtime = AgentRuntime(
+        root=tmp_path,
+        config=config,
+        provider=provider,
+        model="fake-model",
+        session=store.create(provider="fake", model="fake-model"),
+        session_store=store,
+        tools=build_default_tool_registry(),
+        ui=TerminalUI(Console(file=output, force_terminal=True, no_color=True)),
+        auto_approve=True,
+    )
+
+    result = runtime.run_user_turn("summarize")
+
+    text = output.getvalue()
+    assert result == "# Summary\n\n- **Done** with `src/app.py`"
+    assert "Summary" in text
+    assert "Done" in text
+    assert "src/app.py" in text
+    assert "# Summary" not in text
+    assert "**Done**" not in text
+    assert "`src/app.py`" not in text

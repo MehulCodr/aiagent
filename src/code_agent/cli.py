@@ -112,7 +112,8 @@ def plan(
         no_color=no_color,
         verbose=verbose,
     )
-    created = runtime.create_plan(prompt)
+    with runtime.ui.activity("Planning..."):
+        created = runtime.create_plan(prompt)
     runtime.ui.print_plan(created.body)
     runtime.ui.info(f"saved plan {created.id}")
 

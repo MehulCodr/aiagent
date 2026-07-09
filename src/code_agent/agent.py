@@ -64,21 +64,27 @@ class AgentRuntime:
             usage = None
             timer = self.observer.timer()
             try:
-                for event in self.provider.stream_chat(
-                    model=self.model,
-                    system_prompt=system_prompt,
-                    messages=input_messages,
-                    tools=self.tools.definitions(),
-                    temperature=self.config.temperature,
-                    max_output_tokens=self.config.max_output_tokens,
-                ):
-                    if event.type == "text" and event.text:
-                        assistant_text += event.text
-                        self.ui.stream_text(event.text)
-                    elif event.type == "tool_calls":
-                        tool_calls.extend(event.tool_calls)
-                    elif event.type == "done" and event.usage is not None:
-                        usage = event.usage
+                with self.ui.activity("Thinking...") as activity:
+                    is_generating = False
+                    for event in self.provider.stream_chat(
+                        model=self.model,
+                        system_prompt=system_prompt,
+                        messages=input_messages,
+                        tools=self.tools.definitions(),
+                        temperature=self.config.temperature,
+                        max_output_tokens=self.config.max_output_tokens,
+                    ):
+                        if event.type == "text" and event.text:
+                            if not is_generating:
+                                activity.update("[cyan]Generating...[/cyan]")
+                                is_generating = True
+                            assistant_text += event.text
+                        elif event.type == "tool_calls":
+                            if event.tool_calls:
+                                activity.update("[cyan]Preparing tool calls...[/cyan]")
+                            tool_calls.extend(event.tool_calls)
+                        elif event.type == "done" and event.usage is not None:
+                            usage = event.usage
             except ProviderError as exc:
                 self.ui.error(str(exc))
                 raise
@@ -91,7 +97,7 @@ class AgentRuntime:
                 )
 
             if assistant_text:
-                self.ui.end_stream()
+                self.ui.assistant_text(assistant_text)
                 final_text = assistant_text
 
             assistant_message = ChatMessage(role="assistant", content=assistant_text, tool_calls=tool_calls)
@@ -136,7 +142,10 @@ class AgentRuntime:
         engine = ExecutionEngine(root=self.root, tools=self.tools, approval=approval, observer=self.observer)
         for call in tool_calls:
             self.ui.tool_call(call)
-        records = engine.run_many(tool_calls)
+        count = len(tool_calls)
+        label = "Calling 1 tool..." if count == 1 else f"Calling {count} tools..."
+        with self.ui.activity(label):
+            records = engine.run_many(tool_calls)
         for record in records:
             result = record.result
             self.ui.tool_result(record.name, result)
