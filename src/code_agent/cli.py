@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Annotated
 
@@ -243,8 +242,6 @@ def _build_runtime(
     registry = build_provider_registry()
     provider = registry.get(provider_id)
     model = model_override or config.model or config.preferred_models.get(provider_id) or provider.default_model
-    if provider_id == "gemini" and os.getenv("GEMINI_API_KEY"):
-        model = choose_nearest_model(provider, model)
     store = SessionStore(project_root)
     if session_ref:
         session = store.load(session_ref)

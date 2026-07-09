@@ -4,19 +4,20 @@ import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from prompt_toolkit import PromptSession, prompt
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.status import Status
-from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
 from code_agent.messages import ToolCall
 from code_agent.tools.base import ToolResult
+
+if TYPE_CHECKING:
+    from prompt_toolkit import PromptSession
+    from rich.markdown import Markdown
+    from rich.status import Status
 
 
 class TerminalMarkdownRenderer:
@@ -25,6 +26,8 @@ class TerminalMarkdownRenderer:
         self.hyperlinks = hyperlinks
 
     def render(self, text: str) -> Markdown:
+        from rich.markdown import Markdown
+
         return Markdown(text, code_theme=self.code_theme, hyperlinks=self.hyperlinks)
 
 
@@ -64,10 +67,14 @@ class TerminalUI:
 
     @contextmanager
     def activity(self, message: str) -> Iterator[Status]:
+        from rich.status import Status
+
         with self.console.status(f"[cyan]{message}[/cyan]", spinner="dots") as status:
             yield status
 
     def user_prompt(self) -> str:
+        from prompt_toolkit import PromptSession
+
         if self._prompt_session is None:
             self._prompt_session = PromptSession()
         return self._prompt_session.prompt("you> ", bottom_toolbar=self._bottom_toolbar).strip()
@@ -111,15 +118,21 @@ class TerminalUI:
         self.console.print(table)
 
     def diff(self, text: str) -> None:
+        from rich.syntax import Syntax
+
         self.console.print(Syntax(text, "diff", theme="ansi_dark", word_wrap=True))
 
     def confirm_shell(self, command: str, reason: str) -> bool:
+        from prompt_toolkit import prompt
+
         self.warning("Shell command requires approval.")
         self.console.print(Panel(f"{command}\n\n[dim]{reason}[/dim]", title="shell", border_style="yellow"))
         answer = prompt("approve? [y/N] ").strip().lower()
         return answer in {"y", "yes"}
 
     def confirm_tool(self, tool_name: str, arguments: dict[str, Any], reason: str) -> bool:
+        from prompt_toolkit import prompt
+
         self.warning(f"{tool_name} requires approval.")
         body = f"{_format_json(arguments)}\n\n{reason}"
         self.console.print(Panel(Text(body), title=tool_name, border_style="yellow"))
