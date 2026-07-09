@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import StringIO
+from unittest.mock import patch
 
 from rich.console import Console
 
@@ -54,3 +55,18 @@ def test_markdown_renderer_disables_hyperlinks_for_terminal_logs() -> None:
     rendered = renderer.render("[docs](https://example.com)")
 
     assert rendered.hyperlinks is False
+
+
+def test_shell_approval_uses_simple_yes_no_prompt() -> None:
+    output = StringIO()
+    ui = TerminalUI(Console(file=output, force_terminal=True, no_color=True), no_color=True)
+
+    with patch("prompt_toolkit.prompt", return_value="y") as prompt:
+        approved = ui.confirm_tool("shell", {"command": "pytest"}, "Shell commands require approval in strict mode.")
+
+    text = output.getvalue()
+    assert approved is True
+    prompt.assert_called_once_with("Run command? [y/N] ")
+    assert "Shell command requires approval:" in text
+    assert "pytest" in text
+    assert "╭" not in text

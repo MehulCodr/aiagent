@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from code_agent.approval import ApprovalLayer, PermissionPolicy, PermissionProfile
+from code_agent.approval import ApprovalLayer, PermissionDecision, PermissionPolicy, PermissionProfile
 from code_agent.execution import ExecutionEngine
 from code_agent.messages import ToolCall
 from code_agent.observability import Observer
@@ -45,3 +45,21 @@ def test_execution_engine_collects_tool_errors(tmp_path: Path) -> None:
 
     assert records[0].result.is_error
     assert "Not a file" in records[0].result.content
+
+
+def test_execution_engine_uses_precomputed_permission_decisions(tmp_path: Path) -> None:
+    def fail_callback(*_args) -> bool:
+        raise AssertionError("approval callback should not be called during execution")
+
+    engine = ExecutionEngine(
+        root=tmp_path,
+        tools=build_default_tool_registry(),
+        approval=ApprovalLayer(policy=PermissionPolicy(PermissionProfile.STRICT), callback=fail_callback),
+    )
+
+    records = engine.run_many(
+        [ToolCall(id="shell", name="shell", arguments={"command": "echo ok"})],
+        decisions=[PermissionDecision(allowed=True, requires_approval=False, reason="Approved")],
+    )
+
+    assert records[0].result.content.startswith("exit_code: 0")

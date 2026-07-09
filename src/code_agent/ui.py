@@ -125,12 +125,16 @@ class TerminalUI:
     def confirm_shell(self, command: str, reason: str) -> bool:
         from prompt_toolkit import prompt
 
-        self.warning("Shell command requires approval.")
-        self.console.print(Panel(f"{command}\n\n[dim]{reason}[/dim]", title="shell", border_style="yellow"))
-        answer = prompt("approve? [y/N] ").strip().lower()
+        self.console.print(f"[yellow]Shell command requires approval:[/yellow] {command}")
+        if reason:
+            self.console.print(f"[dim]{reason}[/dim]")
+        answer = prompt("Run command? [y/N] ").strip().lower()
         return answer in {"y", "yes"}
 
     def confirm_tool(self, tool_name: str, arguments: dict[str, Any], reason: str) -> bool:
+        if tool_name == "shell":
+            return self.confirm_shell(str(arguments.get("command") or ""), reason)
+
         from prompt_toolkit import prompt
 
         self.warning(f"{tool_name} requires approval.")

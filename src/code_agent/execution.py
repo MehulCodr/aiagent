@@ -42,7 +42,12 @@ class ExecutionEngine:
         self.observer = observer
         self.max_workers = max_workers
 
-    def run_many(self, calls: list[ToolCall]) -> list[ToolExecutionRecord]:
+    def run_many(
+        self,
+        calls: list[ToolCall],
+        *,
+        decisions: list[PermissionDecision] | None = None,
+    ) -> list[ToolExecutionRecord]:
         records: list[ToolExecutionRecord] = []
         index = 0
         while index < len(calls):
@@ -52,25 +57,39 @@ class ExecutionEngine:
                 while index < len(calls) and self.tools.is_parallel_safe(calls[index].name):
                     group.append((index, calls[index]))
                     index += 1
-                records.extend(self._run_parallel_group(group))
+                records.extend(self._run_parallel_group(group, decisions=decisions))
             else:
-                records.append(self._run_one(index, call))
+                records.append(self._run_one(index, call, decision=decisions[index] if decisions else None))
                 index += 1
         return sorted(records, key=lambda record: record.index)
 
-    def _run_parallel_group(self, group: list[tuple[int, ToolCall]]) -> list[ToolExecutionRecord]:
+    def _run_parallel_group(
+        self,
+        group: list[tuple[int, ToolCall]],
+        *,
+        decisions: list[PermissionDecision] | None = None,
+    ) -> list[ToolExecutionRecord]:
         if len(group) == 1:
             index, call = group[0]
-            return [self._run_one(index, call)]
+            return [self._run_one(index, call, decision=decisions[index] if decisions else None)]
         with ThreadPoolExecutor(max_workers=min(self.max_workers, len(group))) as executor:
-            futures = {executor.submit(self._run_one, index, call): index for index, call in group}
+            futures = {
+                executor.submit(self._run_one, index, call, decision=decisions[index] if decisions else None): index
+                for index, call in group
+            }
             records = [future.result() for future in as_completed(futures)]
         return sorted(records, key=lambda record: record.index)
 
-    def _run_one(self, index: int, call: ToolCall) -> ToolExecutionRecord:
+    def _run_one(
+        self,
+        index: int,
+        call: ToolCall,
+        *,
+        decision: PermissionDecision | None = None,
+    ) -> ToolExecutionRecord:
         started_at = datetime.now(UTC).isoformat()
         timer = self.observer.timer() if self.observer else None
-        decision = self.approval.authorize(call.name, call.arguments, self.root)
+        decision = decision or self.approval.authorize(call.name, call.arguments, self.root)
         if decision.allowed:
             context = ToolContext(root=self.root, auto_approve=True)
             result = self.tools.run(call.name, call.arguments, context)

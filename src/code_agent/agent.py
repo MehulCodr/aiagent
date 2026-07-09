@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from code_agent.approval import ApprovalLayer, PermissionPolicy
+from code_agent.approval import ApprovalLayer, PermissionDecision, PermissionPolicy
 from code_agent.config import AgentConfig
 from code_agent.context import build_system_prompt
 from code_agent.execution import ExecutionEngine
@@ -142,10 +142,14 @@ class AgentRuntime:
         engine = ExecutionEngine(root=self.root, tools=self.tools, approval=approval, observer=self.observer)
         for call in tool_calls:
             self.ui.tool_call(call)
+        decisions = self._authorize_tool_calls(approval, tool_calls)
         count = len(tool_calls)
         label = "Calling 1 tool..." if count == 1 else f"Calling {count} tools..."
-        with self.ui.activity(label):
-            records = engine.run_many(tool_calls)
+        if any(decision.allowed for decision in decisions):
+            with self.ui.activity(label):
+                records = engine.run_many(tool_calls, decisions=decisions)
+        else:
+            records = engine.run_many(tool_calls, decisions=decisions)
         for record in records:
             result = record.result
             self.ui.tool_result(record.name, result)
@@ -159,6 +163,9 @@ class AgentRuntime:
             )
             self.session_store.save(self.session)
         self.ui.tool_timeline(records)
+
+    def _authorize_tool_calls(self, approval: ApprovalLayer, tool_calls: list[ToolCall]) -> list[PermissionDecision]:
+        return [approval.authorize(call.name, call.arguments, self.root) for call in tool_calls]
 
     def _retrieve_context(self, prompt: str) -> str:
         if not self.config.rag_enabled:
