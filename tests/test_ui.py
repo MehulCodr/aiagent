@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from io import StringIO
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from prompt_toolkit.history import FileHistory, InMemoryHistory
 from rich.console import Console
 
 from code_agent.messages import ToolCall
+from code_agent.cli import chat
 from code_agent.ui import TerminalMarkdownRenderer, TerminalUI
 
 
@@ -92,3 +94,61 @@ def test_prompt_history_falls_back_to_memory_before_header() -> None:
     history = ui._create_prompt_history()
 
     assert isinstance(history, InMemoryHistory)
+
+
+def test_chat_ignores_whitespace_only_input_but_preserves_valid_prompt_whitespace() -> None:
+    ui = Mock()
+    ui.user_prompt.side_effect = ["   ", "  keep this whitespace  ", KeyboardInterrupt()]
+    runtime = SimpleNamespace(
+        ui=ui,
+        provider=SimpleNamespace(id="fake"),
+        model="fake-model",
+        root="root",
+        session=SimpleNamespace(id="session-123"),
+        run_user_turn=Mock(),
+    )
+
+    with patch("code_agent.cli._build_runtime", return_value=runtime):
+        chat(
+            prompt=None,
+            provider=None,
+            model=None,
+            root=None,
+            resume=False,
+            session=None,
+            yes=False,
+            no_color=True,
+            verbose=False,
+        )
+
+    runtime.run_user_turn.assert_called_once_with("  keep this whitespace  ")
+    ui.info.assert_called_once_with("bye")
+
+
+def test_chat_normalizes_only_session_commands() -> None:
+    ui = Mock()
+    ui.user_prompt.side_effect = ["  /help  ", KeyboardInterrupt()]
+    runtime = SimpleNamespace(
+        ui=ui,
+        provider=SimpleNamespace(id="fake"),
+        model="fake-model",
+        root="root",
+        session=SimpleNamespace(id="session-123"),
+        run_user_turn=Mock(),
+    )
+
+    with patch("code_agent.cli._build_runtime", return_value=runtime):
+        chat(
+            prompt=None,
+            provider=None,
+            model=None,
+            root=None,
+            resume=False,
+            session=None,
+            yes=False,
+            no_color=True,
+            verbose=False,
+        )
+
+    ui.help.assert_called_once_with()
+    runtime.run_user_turn.assert_not_called()

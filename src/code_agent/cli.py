@@ -54,10 +54,11 @@ def chat(
         except (EOFError, KeyboardInterrupt):
             runtime.ui.info("bye")
             return
-        if not text:
+        if not text.strip():
             continue
-        if text.startswith("/"):
-            if _handle_command(text, runtime):
+        command_text = text.strip()
+        if command_text.startswith("/"):
+            if _handle_command(command_text, runtime):
                 return
             continue
         try:

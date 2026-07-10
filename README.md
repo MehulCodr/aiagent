@@ -57,6 +57,18 @@ Start the coding agent:
 code-agent chat --provider gemini --verbose
 ```
 
+### Interactive composer
+
+Interactive chat uses a compact framed composer with a `> ` marker. It starts at one editable row, grows with logical or wrapped lines, and scrolls internally after 10 visible content rows while keeping the cursor in view.
+
+- `Enter` sends the complete prompt.
+- `Shift+Enter` inserts a newline when the terminal reports the modifier distinctly.
+- `Alt+Enter`, or `Escape` followed by `Enter`, is the portable newline fallback.
+- `Up` and `Down` move through logical and soft-wrapped lines. At the first or last visual line they navigate prompt history; moving past the newest entry restores the unfinished draft.
+- Bracketed multiline paste is inserted as one prompt and preserves indentation.
+
+Some legacy terminals transmit `Shift+Enter` exactly like `Enter`, so no application can distinguish the keys there. Use `Alt+Enter` or `Escape`, then `Enter`, in that case. The interaction model was informed by Pi's editor behavior, but this project uses an independent Python implementation built on prompt-toolkit.
+
 Run one prompt and exit:
 
 ```powershell
