@@ -207,7 +207,9 @@ class TerminalUI:
 
         @bindings.add("enter", filter=default_focused, eager=True)
         def handle_enter(event: Any) -> None:
-            if event.data in _SINGLE_KEY_NEWLINE_SEQUENCES:
+            if event.data in _SINGLE_KEY_NEWLINE_SEQUENCES or (
+                event.data == "\r" and _windows_shift_pressed(event.app.input)
+            ):
                 insert_newline(event)
             else:
                 submit(event)
@@ -450,6 +452,26 @@ def _format_json(value: Any) -> str:
 def _key_binding_sequence(sequence: str) -> tuple[str, ...]:
     aliases = {"\x1b": "escape", "\r": "enter", "\n": "c-j"}
     return tuple(aliases.get(character, character) for character in sequence)
+
+
+def _windows_shift_pressed(input_object: object) -> bool:
+    """Recover Shift+Enter when prompt-toolkit's Win32 reader drops Shift."""
+    import sys
+
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from prompt_toolkit.input.win32 import Win32Input
+
+        if not isinstance(input_object, Win32Input):
+            return False
+        get_async_key_state = ctypes.windll.user32.GetAsyncKeyState
+        get_async_key_state.argtypes = [ctypes.c_int]
+        get_async_key_state.restype = ctypes.c_short
+        return get_async_key_state(0x10) < 0
+    except (AttributeError, ImportError, OSError):
+        return False
 
 
 def _line_visual_segments(line: str, window_width: int) -> tuple[_VisualSegment, ...]:

@@ -22,6 +22,7 @@ from code_agent.ui import (
     SHIFT_ENTER_SEQUENCES,
     TerminalUI,
     _line_visual_segments,
+    _windows_shift_pressed,
 )
 
 
@@ -122,6 +123,17 @@ def test_plain_enter_submits_instead_of_inserting_newline() -> None:
     result, _ui = _run_prompt("hello\r")
 
     assert result == "hello"
+
+
+def test_native_windows_shift_enter_inserts_newline_when_modifier_is_pressed() -> None:
+    with patch("code_agent.ui._windows_shift_pressed", side_effect=[True, False]):
+        result, _ui = _run_prompt("first\rsecond\r")
+
+    assert result == "first\nsecond"
+
+
+def test_windows_shift_detector_ignores_non_console_input() -> None:
+    assert _windows_shift_pressed(object()) is False
 
 
 def test_newline_is_inserted_at_the_cursor_without_submitting() -> None:
@@ -419,48 +431,47 @@ def test_terminal_resize_reflows_content_with_one_attached_frame() -> None:
             session = ui._create_prompt_session(input=pipe, output=output)
             ui._prompt_session = session
             root_container_id = id(session.layout.container)
-            states: list[tuple[int, int, int, int]] = []
+            renders: asyncio.Queue[tuple[int, int, int, int]] = asyncio.Queue()
 
             def record_render(_app: object) -> None:
                 info = ui._prompt_window.render_info
                 if info is not None and len(session.default_buffer.text) == 120:
-                    states.append((output.columns, info.window_width, info.window_height, info.cursor_position.y))
+                    renders.put_nowait(
+                        (output.columns, info.window_width, info.window_height, info.cursor_position.y)
+                    )
 
             session.app.after_render += record_render
 
-            async def wait_for_state(columns: int) -> None:
-                for _attempt in range(50):
-                    if any(state[0] == columns for state in states):
-                        return
-                    await asyncio.sleep(0.01)
-                raise AssertionError(f"composer did not render at {columns} columns: {states}")
+            async def expect_render(expected: tuple[int, int, int]) -> tuple[int, int, int, int]:
+                while True:
+                    state = await asyncio.wait_for(renders.get(), timeout=1.0)
+                    if state[:3] == expected:
+                        return state
 
-            task = asyncio.create_task(
-                session.prompt_async(
-                    COMPOSER_PROMPT,
-                    bottom_toolbar=ui._bottom_toolbar,
-                    show_frame=True,
-                    default="x" * 120,
+            try:
+                task = asyncio.create_task(
+                    session.prompt_async(
+                        COMPOSER_PROMPT,
+                        bottom_toolbar=ui._bottom_toolbar,
+                        show_frame=True,
+                        default="x" * 120,
+                    )
                 )
-            )
-            await wait_for_state(80)
-            await asyncio.sleep(0.1)
-            output.columns = 30
-            session.app.invalidate()
-            await wait_for_state(30)
-            await asyncio.sleep(0.1)
-            output.columns = 80
-            session.app.invalidate()
-            previous_80_count = sum(state[0] == 80 for state in states)
-            for _attempt in range(50):
-                if sum(state[0] == 80 for state in states) > previous_80_count:
-                    break
-                await asyncio.sleep(0.01)
-            else:
-                raise AssertionError(f"composer did not re-render at 80 columns: {states}")
-            pipe.send_text("\r")
-            result = await task
-            return result, states, id(session.layout.container) == root_container_id
+                initial = await expect_render((80, 78, 2))
+
+                output.columns = 30
+                session.app.invalidate()
+                narrow = await expect_render((30, 28, 5))
+
+                output.columns = 80
+                session.app.invalidate()
+                wide = await expect_render((80, 78, 2))
+
+                pipe.send_text("\r")
+                result = await task
+                return result, [initial, narrow, wide], id(session.layout.container) == root_container_id
+            finally:
+                session.app.after_render -= record_render
 
     result, states, frame_remained_attached = asyncio.run(exercise())
 

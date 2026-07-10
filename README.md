@@ -67,7 +67,7 @@ Interactive chat uses a compact framed composer with a `> ` marker. It starts at
 - `Up` and `Down` move through logical and soft-wrapped lines. At the first or last visual line they navigate prompt history; moving past the newest entry restores the unfinished draft.
 - Bracketed multiline paste is inserted as one prompt and preserves indentation.
 
-Some legacy terminals transmit `Shift+Enter` exactly like `Enter`, so no application can distinguish the keys there. Use `Alt+Enter` or `Escape`, then `Enter`, in that case. The interaction model was informed by Pi's editor behavior, but this project uses an independent Python implementation built on prompt-toolkit.
+On native Windows consoles, the composer recovers Shift state when prompt-toolkit reports Shift+Enter as plain Enter. Some other legacy terminals transmit both keys identically without exposing modifier state; use `Alt+Enter` or `Escape`, then `Enter`, there. The interaction model was informed by Pi's editor behavior, but this project uses an independent Python implementation built on prompt-toolkit.
 
 Run one prompt and exit:
 
