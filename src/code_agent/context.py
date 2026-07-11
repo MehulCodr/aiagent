@@ -18,12 +18,15 @@ EXCLUDED_NAMES = {
     "venv",
     "__pycache__",
     "node_modules",
+    "vendor",
     "dist",
     "build",
+    ".agent",
+    ".code-agent",
 }
 
 
-def build_system_prompt(root: Path, tools: list[Any], config: AgentConfig) -> str:
+def build_system_prompt(root: Path, tools: list[Any], config: AgentConfig, retrieved_context: str = "") -> str:
     tool_names = ", ".join(tool.name for tool in tools)
     project_snapshot = _project_snapshot(root)
     agent_instructions = _read_optional(root / "AGENTS.md", 12_000)
@@ -43,9 +46,24 @@ def build_system_prompt(root: Path, tools: list[Any], config: AgentConfig) -> st
         "- Do not expose secrets. If a command output contains a secret, summarize safely.",
         "- Continue the agent loop until the requested work is actually complete or a real blocker is reached.",
         "",
+        "Response style:",
+        "- Write user-facing replies in concise Markdown when structure helps.",
+        "- Use headings, bullets, inline code, and fenced code blocks naturally; the terminal UI renders Markdown for display.",
+        "- Keep final answers compact and focused on the completed work, verification, and blockers if any.",
+        "",
         "Project snapshot:",
         project_snapshot,
     ]
+    if retrieved_context:
+        parts.extend(
+            [
+                "",
+                "Retrieved repository context:",
+                retrieved_context,
+                "",
+                "When you use retrieved repository facts, cite paths and line ranges exactly in this form: src/file.py:10-24.",
+            ]
+        )
     if agent_instructions:
         parts.extend(["", "AGENTS.md:", agent_instructions])
     if config.session_char_budget:

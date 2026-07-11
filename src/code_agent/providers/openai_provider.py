@@ -4,7 +4,7 @@ import json
 import os
 from uuid import uuid4
 
-from code_agent.messages import ChatMessage, ProviderEvent, ToolCall
+from code_agent.messages import ChatMessage, ProviderEvent, ProviderUsage, ToolCall
 from code_agent.providers.base import LLMProvider, ModelInfo, ProviderError
 from code_agent.tools.base import ToolDefinition
 
@@ -56,15 +56,24 @@ class OpenAIProvider(LLMProvider):
         if tools:
             request["tools"] = [tool.as_openai_tool() for tool in tools]
             request["tool_choice"] = "auto"
+        request["stream_options"] = {"include_usage": True}
         if temperature is not None:
             request["temperature"] = temperature
         if max_output_tokens is not None:
             request["max_completion_tokens"] = max_output_tokens
 
         tool_state: dict[int, dict[str, str]] = {}
+        usage: ProviderUsage | None = None
         try:
             stream = client.chat.completions.create(**request)
             for chunk in stream:
+                raw_usage = getattr(chunk, "usage", None)
+                if raw_usage is not None:
+                    usage = ProviderUsage(
+                        input_tokens=getattr(raw_usage, "prompt_tokens", None),
+                        output_tokens=getattr(raw_usage, "completion_tokens", None),
+                        total_tokens=getattr(raw_usage, "total_tokens", None),
+                    )
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
@@ -88,7 +97,7 @@ class OpenAIProvider(LLMProvider):
         calls = [_openai_state_to_call(index, state) for index, state in sorted(tool_state.items()) if state.get("name")]
         if calls:
             yield ProviderEvent(type="tool_calls", tool_calls=calls)
-        yield ProviderEvent(type="done")
+        yield ProviderEvent(type="done", usage=usage)
 
 
 def _to_openai_messages(messages: list[ChatMessage]) -> list[dict]:
