@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import httpx
 
-from code_agent.messages import ChatMessage, ProviderEvent, ToolCall
+from code_agent.messages import ChatMessage, ProviderEvent, ProviderUsage, ToolCall
 from code_agent.providers.base import LLMProvider, ModelInfo, ProviderError
 from code_agent.tools.base import ToolDefinition
 
@@ -57,6 +57,7 @@ class OllamaProvider(LLMProvider):
             payload["options"] = options
 
         tool_calls: list[ToolCall] = []
+        usage: ProviderUsage | None = None
         try:
             with httpx.stream("POST", f"{self.base_url}/api/chat", json=payload, timeout=None) as response:
                 response.raise_for_status()
@@ -70,12 +71,23 @@ class OllamaProvider(LLMProvider):
                         yield ProviderEvent(type="text", text=content)
                     for raw_call in message.get("tool_calls") or []:
                         tool_calls.append(_ollama_call(raw_call, len(tool_calls)))
+                    if data.get("done"):
+                        input_tokens = data.get("prompt_eval_count")
+                        output_tokens = data.get("eval_count")
+                        total_tokens = None
+                        if input_tokens is not None or output_tokens is not None:
+                            total_tokens = int(input_tokens or 0) + int(output_tokens or 0)
+                        usage = ProviderUsage(
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                            total_tokens=total_tokens,
+                        )
         except Exception as exc:
             raise ProviderError(f"Ollama request failed for model '{model}': {exc}") from exc
 
         if tool_calls:
             yield ProviderEvent(type="tool_calls", tool_calls=tool_calls)
-        yield ProviderEvent(type="done")
+        yield ProviderEvent(type="done", usage=usage)
 
 
 def _to_ollama_messages(messages: list[ChatMessage]) -> list[dict]:

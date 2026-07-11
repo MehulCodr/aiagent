@@ -24,7 +24,11 @@ class AgentConfig(BaseModel):
     max_steps: int = 12
     stream: bool = True
     require_shell_confirmation: bool = True
+    permission_profile: str = "strict"
     session_char_budget: int = 120_000
+    rag_enabled: bool = True
+    rag_max_chunks: int = 6
+    verbose: bool = False
 
 
 def find_project_root(start: Path | None = None) -> Path:
@@ -37,6 +41,10 @@ def find_project_root(start: Path | None = None) -> Path:
 
 def config_dir(root: Path) -> Path:
     return root / ".code-agent"
+
+
+def agent_dir(root: Path) -> Path:
+    return root / ".agent"
 
 
 def config_path(root: Path) -> Path:

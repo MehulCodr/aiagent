@@ -30,7 +30,7 @@ RISKY_PATTERNS = [
     r"\bRemove-Item\b",
     r"\bmove\b",
     r"\bmv\b",
-    r"\bgit\s+(checkout|switch|reset|rebase|merge|clean)\b",
+    r"\bgit\b",
     r"\b(pip|uv|poetry|npm|pnpm|yarn)\s+(install|add|remove|update)\b",
     r"\bchmod\b",
     r"\bchown\b",
@@ -91,7 +91,7 @@ class ShellTool(Tool):
         risk, reason = classify_command(command, context.root, allow_outside_root)
         if risk == "blocked":
             return ToolResult(content=reason, is_error=True)
-        if risk == "risky" and not context.auto_approve:
+        if not context.auto_approve:
             if context.approval_callback is None:
                 return ToolResult(content=f"Command requires user approval: {reason}", is_error=True)
             if not context.approval_callback(command, arguments.get("reason") or reason):

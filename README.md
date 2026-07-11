@@ -1,17 +1,24 @@
 # code-agent
 
-A minimal Python 3.12 CLI coding agent inspired by Pi's provider/model registry, tool-call-first runtime, session state, and terminal workflow.
+A Python 3.12 CLI coding agent with provider abstraction, repository-aware context, plan/apply workflow, approval-gated tools, persistent sessions, and Rich terminal output.
 
 ## Features
 
 - CLI command: `code-agent`
 - Provider abstraction for Gemini, OpenAI, and Ollama
+- Repository RAG over local files with path and line-range citations
+- Plan/apply modes with persisted reviewable plans
 - Tool-calling agent loop with streaming text
 - Project-root file tools: `list_files`, `read_file`, `write_file`, `edit_file`
-- Shell tool with blocked destructive commands, risky-command approval, and project-root execution
-- JSON session storage in `.code-agent/sessions`
+- Approval layer for shell and git operations with `--yes` for non-interactive runs
+- Parallel execution for safe read-only tool calls with deterministic result ordering
+- JSON session storage in `.agent/sessions`
+- `/save`, `/load`, and `/sessions` memory commands
+- Rollback snapshots for the last agent turn
+- Tool timing, response latency, provider usage fields, and verbose debug logs
+- Bounded `code-agent test` command for test/lint/fix loops
 - Project config in `.code-agent/config.json`
-- Rich terminal panels for sessions, tool calls, and results
+- Rich terminal panels for sessions, tool calls, diffs, timelines, and fixed-bottom prompts
 - Live Gemini smoke tests using the real API
 
 ## Install
@@ -47,13 +54,55 @@ code-agent smoke
 Start the coding agent:
 
 ```powershell
-code-agent chat --provider gemini
+code-agent chat --provider gemini --verbose
 ```
+
+### Interactive composer
+
+Interactive chat uses a compact framed composer with a `> ` marker. It starts at one editable row, grows with logical or wrapped lines, and scrolls internally after 10 visible content rows while keeping the cursor in view.
+
+- `Enter` sends the complete prompt.
+- `Shift+Enter` inserts a newline when the terminal reports the modifier distinctly.
+- `Alt+Enter`, or `Escape` followed by `Enter`, is the portable newline fallback.
+- `Up` and `Down` move through logical and soft-wrapped lines. At the first or last visual line they navigate prompt history; moving past the newest entry restores the unfinished draft.
+- Bracketed multiline paste is inserted as one prompt and preserves indentation.
+
+On native Windows consoles, the composer recovers Shift state when prompt-toolkit reports Shift+Enter as plain Enter. Some other legacy terminals transmit both keys identically without exposing modifier state; use `Alt+Enter` or `Escape`, then `Enter`, there. The interaction model was informed by Pi's editor behavior, but this project uses an independent Python implementation built on prompt-toolkit.
 
 Run one prompt and exit:
 
 ```powershell
-code-agent run "Inspect this repo and summarize how to run it" --provider gemini
+code-agent run "Inspect this repo and summarize how to run it" --provider gemini --yes
+```
+
+Create a plan without applying changes, review it, then execute it:
+
+```powershell
+code-agent plan "Add validation tests for the filesystem tools" --provider gemini
+code-agent apply --yes
+```
+
+Interactive memory commands:
+
+```text
+/save parser-refactor
+/sessions
+/load parser-refactor
+/plan Add retry handling around provider calls
+/apply
+/rollback
+```
+
+Disable terminal colors when piping output or running in plain logs:
+
+```powershell
+code-agent run "List the repo architecture" --no-color
+```
+
+Run a bounded test command:
+
+```powershell
+code-agent test "pytest" --max-attempts 1
 ```
 
 Use Ollama:
@@ -71,10 +120,10 @@ code-agent chat --provider openai --model gpt-4.1-mini
 
 ## Tests
 
-Local tool tests:
+Local tests:
 
 ```powershell
-pytest tests/test_tools.py
+pytest
 ```
 
 Live Gemini tests:
@@ -88,7 +137,15 @@ The live tests do not mock provider responses. They call Gemini to list models, 
 
 ## Safety Model
 
-File tools are restricted to the project root. The shell tool runs from the project root, blocks destructive commands such as `git reset --hard` and recursive force deletes, and asks before risky commands such as package installs or file removal. `--yes` auto-approves risky shell commands but does not bypass blocked commands.
+File tools are restricted to the project root. Repository RAG ignores `.git`, `vendor`, `node_modules`, `dist`, `build`, `.agent`, and generated cache folders.
+
+The default permission profile is `strict`: all shell commands require approval, and git operations are approval-gated. `--yes` auto-approves commands that need approval but does not bypass blocked destructive commands such as `git reset --hard`, `git clean -fd`, recursive force deletes, `format`, `mkfs`, shutdown, or reboot.
+
+Profiles:
+
+- `strict`: approve every shell command.
+- `relaxed`: allow safe shell commands, approve risky shell and git commands.
+- `read-only`: block shell and file-writing tools.
 
 ## Docs
 
