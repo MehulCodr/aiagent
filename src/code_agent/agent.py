@@ -47,25 +47,25 @@ class AgentRuntime:
             assistant_text = ""
             tool_calls: list[ToolCall] = []
             try:
-                with self.ui.thinking(step=step, model=self.model) as thinking:
-                    for event in self.provider.stream_chat(
-                        model=self.model,
-                        system_prompt=system_prompt,
-                        messages=input_messages,
-                        tools=self.tools.definitions(),
-                        temperature=self.config.temperature,
-                        max_output_tokens=self.config.max_output_tokens,
-                    ):
-                        if event.type == "text" and event.text:
-                            assistant_text += event.text
-                        elif event.type == "tool_calls":
-                            tool_calls.extend(event.tool_calls)
+                for event in self.provider.stream_chat(
+                    model=self.model,
+                    system_prompt=system_prompt,
+                    messages=input_messages,
+                    tools=self.tools.definitions(),
+                    temperature=self.config.temperature,
+                    max_output_tokens=self.config.max_output_tokens,
+                ):
+                    if event.type == "text" and event.text:
+                        assistant_text += event.text
+                        self.ui.stream_text(event.text)
+                    elif event.type == "tool_calls":
+                        tool_calls.extend(event.tool_calls)
             except ProviderError as exc:
                 self.ui.error(str(exc))
                 raise
 
             if assistant_text:
-                self.ui.assistant_response(assistant_text)
+                self.ui.end_stream()
                 final_text = assistant_text
 
             assistant_message = ChatMessage(role="assistant", content=assistant_text, tool_calls=tool_calls)
@@ -90,8 +90,7 @@ class AgentRuntime:
         )
         for call in tool_calls:
             self.ui.tool_call(call)
-            with self.ui.executing_tool(call.name):
-                result = self.tools.run(call.name, call.arguments, context)
+            result = self.tools.run(call.name, call.arguments, context)
             self.ui.tool_result(call.name, result)
             self.session.messages.append(
                 ChatMessage(
